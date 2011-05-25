@@ -7,7 +7,7 @@
 
 ;;; CONSTANTS
 ;;; ==========================================================================
-	
+
 	CONSTANT PORTC_STAT = b'00000111' ; Settings of PORTC
 
 ;;; MEMORY LAYOUT
@@ -105,7 +105,7 @@ musec2	%=	0x10000
 musec2	%=	0x100
 	movlw	(musec2 + 0x1) % 0x100
 	movwf	cnt0
-	
+
 	decfsz	cnt0, F
 	goto	$-1
 	nop
@@ -125,7 +125,7 @@ musec2	%=	0x100
 
 	;; Adjust these constants to match actual wiring
 	CONSTANT	X1=1, Y1=0, X2=3, Y2=2
-	
+
 adcmsr		MACRO	chan
 	bsf	PORTB, 5	; Enable current through the potentiometer
 	IF (chan == 0)
@@ -182,7 +182,7 @@ tglled		MACRO	led
 
 ;;; Jump to a computed location, anywhere in memory.
 ;;; Arguments: registers that store the jump destination.
-;;; Origin is stored in addrhigh and addrlow, so these calls don't stack.
+;;; Origin is stored in addrhigh and addrlow, so calls to long jumps don't stack.
 
 longjmp		MACRO	addrh, addrl
 	LOCAL	here
@@ -198,14 +198,14 @@ here:
 	ENDM
 
 ;;; Return from a long jump
-	
+
 retjmp		MACRO
 	movf	addrhigh, W
 	movwf	PCLATH
 	movf	addrlow, W
 	movwf	PCL
 	ENDM
-	
+
 ;;; ==========================================================================
 
 ;;; Copy a string. Assumes FSR points to the destination.
@@ -279,14 +279,14 @@ ins_tab		MACRO
 	ENDM
 
 ;;; ==========================================================================
-	
+
 ;;; A fast way to calculate approximate magnitude of a 2-vector.
 ;;; Arguments: registers holding absolute values of vector components.
 ;;; Magnitude is returned in mag.
 ;;; Maximum possible value for the arguments is 185, maximum error is 14.
 ;;; It uses the Robertson formula with magic constant of 3/8, which is
 ;;; calculated by a separate routine.
-	
+
 magaprx		MACRO	mag1, mag2
 	movf	mag1, W		; Find the maximum value
 	subwf	mag2, W
@@ -320,10 +320,10 @@ deadzn		MACRO	arg
 ;;; A shortcut to shuffle things around after checking for deadzone.
 ;;; Use this to copy raw measurements from arg to arg_raw and
 ;;; subtract the center offset.
-	
+
 ddznshf		MACRO	arg
 	movf	arg, W
-	movwf	arg+1
+	movwf	arg+1		; arg_raw should be one reg after arg
 	subabs	arg, center
 	movwf	arg
 	ENDM
@@ -339,7 +339,7 @@ swapff		MACRO	reg1, reg2
 	movwf	reg2
 	xorwf	reg1, F
 	ENDM
-	
+
 ;;; CODE
 ;;; ==========================================================================
 
@@ -378,7 +378,7 @@ txirq:
 	btfss	PIR1, TXIF
 	goto	endirq
 	bcf	STATUS, RP0
-	
+
 	movf	strpos, W
 	movwf	FSR
 	movf	INDF, W
@@ -393,7 +393,7 @@ txirq:
 	goto	endirq
 	bsf	STATUS, RP0
 	bcf	PIE1, TXIE
-	
+
 endirq:
 	;; Restore state before returning from interrupt
 	movf	FSR_TEMP, W
@@ -456,7 +456,7 @@ start:
 	bsf	flags, 2
 	delay	d'300'
 	bsf	INTCON, INTE
-	
+
 wait_calib:
 	;; Wait for calibration
 	btfsc	flags, 0
@@ -477,10 +477,11 @@ done_calib:
 	goto	diagnostic_main
 
 	;; Choose the address of the routine that will generate strings
-	;; to control the mount. Will use a switch to decide between them.
+	;; to control the mount. A physical switch will someday be used
+	;; to make the choice.
 	;; Symbols chosen_{dir,spd} have to be declared as variables because
 	;; the addresses they store become defined in second pass af assembly.
-	
+
 	VARIABLE	chosen_dir = human_readable_dir
 	VARIABLE	chosen_spd = human_readable_spd
 	;VARIABLE	chosen_dir = lx200_dir
@@ -503,7 +504,7 @@ done_calib:
 	clrf	x2_raw
 	clrf	y1_raw
 	clrf	y2_raw
-	
+
 	;; First, jump right ahead and order the mount to stop.
 	clrf	strlen
 	movlw	str
@@ -511,11 +512,11 @@ done_calib:
 	movwf	FSR
 	bsf	flags, 5
 	goto	main_printspd
-	
+
 main:
 	btfss	INTCON, INTE
 	call	calibrate
-	
+
 	movf	spdir, W
 	movwf	spdir_old
 	clrf	spdir
@@ -608,7 +609,7 @@ main_measureloop:
 	bsf	spdir, 6	; If y = 0 we have E or W
 	bcf	spdir, 5
 	goto	main_printdir
-	
+
 	movf	x1, W
 	movwf	mag
 	call	binning
@@ -620,7 +621,7 @@ main_measureloop:
 	btfsc	spdir, 5
 	bsf	spdir, 4
 	bsf	spdir, 5
-	
+
 	;; Did the direction change?
 main_printdir:
 	btfsc	flags, 4	; If old speed was zero always print direction
@@ -665,7 +666,7 @@ main_printspd:
 ;;; by magapprox, measured center and extreme position from the calibration
 ;;; routine.
 ;;; OUTPUT FORMAT:
-;;; x1, x2 - y1, y2    abs(x1^2+y1^2), abs(x2^2+y2^2)    cntr, extrm    bins
+;;; x1, x2 - y1, y2    sqrt(x1^2+y1^2), sqrt(x2^2+y2^2)    cntr, extrm    bins
 
 diagnostic_main:
 	movlw	str
@@ -709,7 +710,7 @@ diagnostic_main:
 	addwf	strlen, F
 	ins_cmsp
 	addwf	strlen, F
-	
+
 	adcmsr	Y2
 	movwf	y2
 	subabs	y2, center
@@ -722,7 +723,7 @@ diagnostic_main:
 	ins_tab
 	addwf	strlen, F
 
-	;; abs(x1^2+y1^2), abs(x2^2+y2^2)
+	;; sqrt(x1^2+y1^2), sqrt(x2^2+y2^2)
 	magaprx	x1, y1
 	movwf	BIN
 	call	BIN2BCD
@@ -759,7 +760,7 @@ diagnostic_main:
 	addwf	strlen, F
 
 	clrf	tmp
-	
+
 	;; bins
 diagnostic_bins:
 	movf	tmp, W
@@ -785,7 +786,7 @@ diagnostic_bins:
 
 	ins_eol
 	addwf	strlen, F
-	
+
 	call	start_tx
 
 	movlw	0x1
@@ -794,27 +795,27 @@ diagnostic_bins:
 	call	wait_tx
 	btfss	INTCON, INTE
 	call	calibrate
-	
+
 	goto	diagnostic_main
 
-	
+
 ;;; ROUTINES
 ;;; ==========================================================================
 
 ;;; Wait for USART transmission to complete, as reported by the TXIE flag.
 ;;; Does NOT check for physical completion (the TRMT flag).
-	
+
 wait_tx:
 	bsf	STATUS, RP0
 	btfsc	PIE1, TXIE
 	goto	$-1
 	bcf	STATUS, RP0
 	return
-	
+
 ;;; Start transmission of a string.
 ;;; Arguments: strpos is the first character, strlen is the string length.
 ;;; Transmission is handled via interrupts.
-	
+
 start_tx:
 	bsf	STATUS, RP0
 	bsf	PIE1, TXIE
@@ -842,7 +843,7 @@ adc_measure:
 ;;; ==========================================================================
 
 ;;; Poll RB0 with 50ms debounce
-	
+
 rb0deb:	
 	btfss	PORTB, 0
 	goto	$-1
@@ -852,7 +853,7 @@ rb0deb:
 	return
 
 ;;; Calibration
-	
+
 calibrate:
 	movlw	PORTC_STAT
 	movwf	PORTC
@@ -860,7 +861,7 @@ calibrate:
 	;; Use the red LED and ask the user to first measure the center and
 	;; then one of the extremal positions (up, down, left or right).
 	;; He orders the measurement using RB0.
-	
+
 	;; First, measure the center values and average them
 	clrf	center
 	clrf	tmp
@@ -940,7 +941,7 @@ calibrate:
 
 ;;; Blinking routine. It cycles three LEDs.
 ;;; Arguments: W is the number of LED cycles
-	
+
 blink:
 	movwf	nocyc
 	clrf	ledidx
@@ -972,7 +973,7 @@ blink_reloop:
 ;;; ==========================================================================
 
 ;;; A routine to multiply a number by 3/8, used by magaprx.
-	
+
 magaprx_3_8:
 	movwf	mag
 	bcf	STATUS, C	; Divide by 8
@@ -1002,7 +1003,7 @@ binning:
 binidx	+=	1
 	ENDW
 	retlw	0x3
-	
+
 ;;; ==========================================================================
 
 ;;; Convert 8-bit binary to BCD
@@ -1063,7 +1064,7 @@ BCDADD3:
 	movf ones, 0 ; add ASCII Offset
 	addlw h'30'
 	movwf ones
-	
+
 	RETURN
 
 ADD3HUNS:
@@ -1097,24 +1098,24 @@ CARRYTENS:
 ;;; ==========================================================================
 
 ;;; Check whether we have crossed the page boundary.
-	
+
         IF ($ >= 0x800)
             ERROR "Core routines larger than a page!"
         ENDIF
 
 ;;; ==========================================================================
-	
+
 ;;; SPEED AND DIRECTION STRINGS
 ;;; These routines are computed GOTOs that append the requested string to
 ;;; wherever FSR points. They return the number of written bytes in retval.
 ;;; Because of their size, these routines are placed in PAGE 1 so that they
 ;;; don't cross the page boundary. Also, they are 256-word aligned to make
 ;;; computed GOTOs easier.
-	
+
 ;;; Speed strings are indexed in ascending order.
 
 ;;; Direction strings are indexed according to the following table,
-;;; with indices in 4-base:
+;;; with indices in base 4:
 ;;; 00 - NW    02 - SW   10 - W    12 - N
 ;;; 01 - NE    03 - SE   11 - E    13 - S
 
@@ -1124,7 +1125,7 @@ CARRYTENS:
 ;;; ==========================================================================
 
 ;;; Macro that writes a single character
-	
+
 wrchar		MACRO	char
 	movlw	char
 	movwf	INDF
@@ -1132,7 +1133,7 @@ wrchar		MACRO	char
 	ENDM
 
 ;;; ==========================================================================
-	
+
 ;;; Human readable
 
 	ORG	0x800
@@ -1235,12 +1236,12 @@ human_readable_spd:
 	movlw	0x9
 	movwf	retval
 	retjmp
-	
+
 	;; Sanity check
         IF (HIGH($) != HIGH(human_readable_dir))
             ERROR "Table crosses 256-word boundary!"
         ENDIF
-	
+
 ;;; ==========================================================================
 
 ;;; LX200 protocol
@@ -1268,7 +1269,7 @@ lx200_dir:
 	goto	lx200_dir_e
 	goto	lx200_dir_n
 	goto	lx200_dir_s
-	
+
 lx200_dir_e:
 	wrchar	':'
 	wrchar	'Q'
