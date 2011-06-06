@@ -450,6 +450,8 @@ start:
 	movlw	0x2
 	call	blink
 
+	goto	diagnostic_main
+	
 	;; Enter diagnostic mode if INT was pressed during powerup signal
 	btfsc	INTCON, INTE
 	goto	wait_calib
@@ -666,7 +668,7 @@ main_printspd:
 ;;; by magapprox, measured center and extreme position from the calibration
 ;;; routine.
 ;;; OUTPUT FORMAT:
-;;; x1, x2 - y1, y2    sqrt(x1^2+y1^2), sqrt(x2^2+y2^2)    cntr, extrm    bins
+;;; x1, y1    sqrt(x1^2+y1^2), sqrt(x2^2+y2^2)    cntr, extrm    bins
 
 diagnostic_main:
 	movlw	str
@@ -674,10 +676,10 @@ diagnostic_main:
 	movwf	FSR
 	clrf	strlen
 
-	;; x1, x2 - y1, y2
+	;; x1, y1
 	adcmsr	X1
 	movwf	x1
-	subabs	x1, center
+	;subabs	x1, center
 	movwf	x1
 	movwf	BIN
 	call	BIN2BCD
@@ -685,36 +687,12 @@ diagnostic_main:
 	memcpy	huns, 0x3
 	addwf	strlen, F
 	ins_cmsp
-	addwf	strlen, F
-
-	adcmsr	X2
-	movwf	x2
-	subabs	x2, center
-	movwf	x2
-	movwf	BIN
-	call	BIN2BCD
-
-	memcpy	huns, 0x3
-	addwf	strlen, F
-	ins_dashtab
 	addwf	strlen, F
 
 	adcmsr	Y1
 	movwf	y1
-	subabs	y1, center
+	;subabs	y1, center
 	movwf	y1
-	movwf	BIN
-	call	BIN2BCD
-
-	memcpy	huns, 0x3
-	addwf	strlen, F
-	ins_cmsp
-	addwf	strlen, F
-
-	adcmsr	Y2
-	movwf	y2
-	subabs	y2, center
-	movwf	y2
 	movwf	BIN
 	call	BIN2BCD
 
@@ -739,6 +717,8 @@ diagnostic_main:
 	addwf	strlen, F
 	ins_tab
 	addwf	strlen, F
+
+	goto	skip_bins
 
 	;; cntr, extrm
 	movf	center, W
@@ -783,6 +763,8 @@ diagnostic_bins:
 	xorwf	tmp, W
 	btfss	STATUS, Z
 	goto	diagnostic_bins
+
+skip_bins:	
 
 	ins_eol
 	addwf	strlen, F
