@@ -701,22 +701,16 @@ diagnostic_main:
 	ins_tab
 	addwf	strlen, F
 
-	;; sqrt(x1^2+y1^2), sqrt(x2^2+y2^2)
+	;; sqrt(x1^2+y1^2)
 	magaprx	x1, y1
 	movwf	BIN
 	call	BIN2BCD
 	memcpy	huns, 0x3
 	addwf	strlen, F
-	ins_cmsp
+	;ins_tab
 	addwf	strlen, F
 
-	magaprx	x2, y2
-	movwf	BIN
-	call	BIN2BCD
-	memcpy	huns, 0x3
-	addwf	strlen, F
-	ins_tab
-	addwf	strlen, F
+	goto	skip_bins
 
 	goto	skip_bins
 
