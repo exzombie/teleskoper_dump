@@ -712,8 +712,6 @@ diagnostic_main:
 
 	goto	skip_bins
 
-	goto	skip_bins
-
 	;; cntr, extrm
 	movf	center, W
 	movwf	BIN
