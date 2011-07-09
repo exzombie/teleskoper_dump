@@ -1,6 +1,6 @@
 
 	list p=16f877
-	
+
 	include "p16f877.inc"
 
 	__CONFIG _BODEN_OFF & _WDT_OFF & _HS_OSC & _PWRTE_ON
@@ -66,9 +66,9 @@
 	y2_raw
 	center
 	tmp			; Never rely on this after a subroutine call
-	thresh			; Deadzone threshold
-	bins:4			; Array for binning of measurements
+	bins:3			; Array for binning of measurements
 	binmax
+	thresh
 	;; BIN2BCD
 	BIN
 	count
@@ -348,7 +348,7 @@ swapff		MACRO	reg1, reg2
 
 ;;; INTERRUPTS
 	ORG	0x4
-irq:	
+irq:
 	;; Save state on interrupt
 	movwf	W_TEMP
 	swapf	STATUS, W
@@ -372,7 +372,7 @@ irq:
 ;;; USART code. It fils TXREG from strpos, which should be in BANK1 general
 ;;; purpose area, i.e. str < strpos < str+0x80. It stops sending when it
 ;;; reaches str+strlen.
-txirq:	
+txirq:
 	;; Transmit register empty?
 	bsf	STATUS, RP0
 	btfss	PIR1, TXIF
@@ -450,8 +450,6 @@ start:
 	movlw	0x2
 	call	blink
 
-	goto	diagnostic_main
-	
 	;; Enter diagnostic mode if INT was pressed during powerup signal
 	btfsc	INTCON, INTE
 	goto	wait_calib
@@ -475,7 +473,7 @@ done_calib:
 	movwf	PORTC
 
 	;; Decide what to do next
-	btfsc	flags, 2
+;	btfsc	flags, 2
 	goto	diagnostic_main
 
 	;; Choose the address of the routine that will generate strings
@@ -676,26 +674,40 @@ diagnostic_main:
 	movwf	FSR
 	clrf	strlen
 
-	;; x1, y1
+	;; x1_raw, y2_raw
+
 	adcmsr	X1
-	movwf	x1
-	;subabs	x1, center
-	movwf	x1
+	movwf	x1_raw
 	movwf	BIN
 	call	BIN2BCD
-
 	memcpy	huns, 0x3
 	addwf	strlen, F
 	ins_cmsp
 	addwf	strlen, F
 
 	adcmsr	Y1
-	movwf	y1
-	;subabs	y1, center
+	movwf	y1_raw
+	movwf	BIN
+	call	BIN2BCD
+	memcpy	huns, 0x3
+	addwf	strlen, F
+	ins_tab
+	addwf	strlen, F
+
+	;; x1, y1
+	subabs	x1_raw, center
+	movwf	x1
+	movwf	BIN
+	call	BIN2BCD
+	memcpy	huns, 0x3
+	addwf	strlen, F
+	ins_cmsp
+	addwf	strlen, F
+
+	subabs	y1_raw, center
 	movwf	y1
 	movwf	BIN
 	call	BIN2BCD
-
 	memcpy	huns, 0x3
 	addwf	strlen, F
 	ins_tab
@@ -707,10 +719,8 @@ diagnostic_main:
 	call	BIN2BCD
 	memcpy	huns, 0x3
 	addwf	strlen, F
-	;ins_tab
+	ins_tab
 	addwf	strlen, F
-
-	goto	skip_bins
 
 	;; cntr, extrm
 	movf	center, W
@@ -719,44 +729,33 @@ diagnostic_main:
 
 	memcpy	huns, 0x3
 	addwf	strlen, F
-	ins_cmsp
-	addwf	strlen, F
-
-	movf	binmax, W
-	movwf	BIN
-	call	BIN2BCD
-
-	memcpy	huns, 0x3
-	addwf	strlen, F
 	ins_tab
 	addwf	strlen, F
 
-	clrf	tmp
-
 	;; bins
+	movlw	bins
+	movwf	tmp
 diagnostic_bins:
-	movf	tmp, W
-	addlw	bins
 	movwf	FSR
 	movf	INDF, W
 	movwf	BIN
-	incf	tmp, F
-
 	call	BIN2BCD
-	movf	strlen, W
-	addlw	str
+	movlw	str
+	addwf	strlen, W
 	movwf	FSR
 	memcpy	huns, 0x3
 	addwf	strlen, F
-	ins_spc
-	addwf	strlen, F
-
-	movlw	0x4
+	incf	tmp, F
+	movlw	binmax+1
 	xorwf	tmp, W
-	btfss	STATUS, Z
+	btfsc	STATUS, Z
+	goto	diagnostic_end_bins
+	ins_cmsp
+	addwf	strlen, F
+	movf	tmp, W
 	goto	diagnostic_bins
-
-skip_bins:	
+	
+diagnostic_end_bins:
 
 	ins_eol
 	addwf	strlen, F
@@ -818,7 +817,7 @@ adc_measure:
 
 ;;; Poll RB0 with 50ms debounce
 
-rb0deb:	
+rb0deb:
 	btfss	PORTB, 0
 	goto	$-1
 	delay	d'50000'
@@ -832,78 +831,149 @@ calibrate:
 	movlw	PORTC_STAT
 	movwf	PORTC
 
-	;; Use the red LED and ask the user to first measure the center and
-	;; then one of the extremal positions (up, down, left or right).
-	;; He orders the measurement using RB0.
 
-	;; First, measure the center values and average them
-	clrf	center
-	clrf	tmp
+	;; Measure the up, down, left and right directions, in that
+	;; order. The user is signalled to perform the measurement by
+	;; turning on the red LED. After measuring each direction, the
+	;; center is measured. These values are averaged.
+
+	clrf center
+
 	delay	d'300000'
 	tglled	0x2
-	call	rb0deb
-	adcmsr	X1
-	addwf	center, F
-	btfsc	STATUS, C
-	incf	tmp, F
-	adcmsr	X2
-	addwf	center, F
-	btfsc	STATUS, C
-	incf	tmp, F
-	adcmsr	Y1
-	addwf	center, F
-	btfsc	STATUS, C
-	incf	tmp, F
-	adcmsr	Y2
-	addwf	center, F
-	btfsc	STATUS, C
-	incf	tmp, F
-	rrf	tmp, F		; Carry is used in rrf automatically
-	rrf	center, F
-	rrf	tmp, F
-	rrf	center, F
 
-	;; Do the measurement and find the maximum value
+	;; Up
+	call	rb0deb
+	adcmsr	Y1
+	movwf	y1
+
+	tglled	0x2
 	delay	d'300000'
 	tglled	0x2
+
 	call	rb0deb
-	adcmsr	X1
-	movwf	binmax
-	adcmsr	X2
-	movwf	tmp
-	subwf	binmax, W
-	btfsc	STATUS, C
-	goto	$+3
-	movf	tmp, W
-	movwf	binmax
 	adcmsr	Y1
 	movwf	tmp
-	subwf	binmax, W
-	btfsc	STATUS, C
-	goto	$+3
-	movf	tmp, W
-	movwf	binmax
-	adcmsr	Y2
+	bcf	STATUS, C
+	rrf	tmp, W
+	addwf	center, F
+
+	;; Down
+	tglled	0x2
+	delay	d'300000'
+	tglled	0x2
+
+	call	rb0deb
+	adcmsr	Y1
+	movwf	y1_raw
+
+	tglled	0x2
+	delay	d'300000'
+	tglled	0x2
+
+	call	rb0deb
+	adcmsr	Y1
 	movwf	tmp
-	subwf	binmax, W
-	btfsc	STATUS, C
-	goto	$+3
-	movf	tmp, W
+	bcf	STATUS, C
+	rrf	tmp, W
+	addwf	center, F
+
+	;; Left
+	tglled	0x2
+	delay	d'300000'
+	tglled	0x2
+
+	call	rb0deb
+	adcmsr	X1
+	movwf	x1
+
+	tglled	0x2
+	delay	d'300000'
+	tglled	0x2
+
+	call	rb0deb
+	adcmsr	Y1
+	movwf	tmp
+	bcf	STATUS, C
+	rrf	tmp, W
+	addwf	center, F
+
+	;; Right
+	tglled	0x2
+	delay	d'300000'
+	tglled	0x2
+
+	call	rb0deb
+	adcmsr	X1
+	movwf	x1_raw
+
+	tglled	0x2
+	delay	d'300000'
+	tglled	0x2
+
+	call	rb0deb
+	adcmsr	Y1
+	movwf	tmp
+	bcf	STATUS, C
+	rrf	tmp, W
+	addwf	center, F
+
+	bcf	STATUS, C
+	rrf	center, F
+
+	tglled	0x2
+
+
+	;; Find the smallest difference between a measured direction
+	;; and the center. This is the range of the stick.
+
+	subabs	center, x1
 	movwf	binmax
 
-	;; Calculate exponential function to bin measurements
-	movlw	bins+3
-	movwf	FSR
-	subabs	binmax, center
-	movwf	INDF
-	bcf	STATUS, C	; Carry is used in rrf, so zero it out
-	rrf	INDF, W
-	decf	FSR, F
-	movwf	INDF
-	movlw	thresh		; thresh is placed before bins
-	xorwf	FSR, W
-	btfss	STATUS, Z
-	goto	$-7
+	subabs	center, x1_raw
+	movwf	tmp
+	subwf	binmax, W
+	movf	tmp, W
+	btfsc	STATUS, C
+	movwf	binmax
+
+	subabs	center, y1
+	movwf	tmp
+	subwf	binmax, W
+	movf	tmp, W
+	btfsc	STATUS, C
+	movwf	binmax
+
+	subabs	center, y1_raw
+	movwf	tmp
+	subwf	binmax, W
+	movf	tmp, W
+	btfsc	STATUS, C
+	movwf	binmax
+
+	;; Set up possible speeds in the following way:
+	;; First, there is a threshold, below which the speed is zero:
+	;; bins[0] = binmax/8 (threshold)
+	;; bins[1] = binmax/2
+	;; bins[2] = binmax - binmax/8
+	;;							        range
+	;;  center     	       	       	       	               	       binmax
+	;;  |-------|-----------------------|-----------------------|-------|
+	;;       bins[0]               	 bins[1]       	         bins[2]
+	;;     	threshold
+	;;
+
+	bcf	STATUS, C
+	rrf	binmax, W
+	movwf	bins+1
+	movwf	bins
+	bcf	STATUS, C
+	rrf	bins, F
+	bcf	STATUS, C
+	rrf	bins, W
+	movwf	bins
+	subwf	binmax, W
+	movwf	bins+2
 
 	delay	d'1000000'
 	bsf	flags, 0
@@ -987,7 +1057,7 @@ binidx	+=	1
 ;;; Returns: huns, tens, ones
 ;;; uses ADD-3 algoerthm
 
-BIN2BCD:	
+BIN2BCD:
 	movlw d'8'
 	movwf count
 	clrf huns
@@ -1014,11 +1084,11 @@ BCDADD3:
 	bcf STATUS, C
 	rlf BIN, 1
 	rlf ones, 1
-	btfsc ones,4 ; 
+	btfsc ones,4 ;
 	CALL CARRYONES
 	rlf tens, 1
 
-	btfsc tens,4 ; 
+	btfsc tens,4 ;
 	CALL CARRYTENS
 	rlf huns,1
 	bcf STATUS, C
